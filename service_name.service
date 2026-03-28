@@ -1,0 +1,11 @@
+[Unit]
+Description=Service Name(Example Wifi LED)
+After=boot_led.py
+
+[Service]
+ExecStart=/usr/bin/python3 /home/kali/file_name.py
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
