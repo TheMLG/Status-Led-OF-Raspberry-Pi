@@ -7,59 +7,73 @@ import psutil
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
 
-# Pins
-PINS = {
-    "wifi": 17,
-    "ssh": 27,
-    "temp": 18,
-    "ram": 22
-}
+# 🔌 Pins
+GREEN = 17   # WiFi
+WHITE = 27   # SSH
+RED = 18     # Temp
+BLUE = 22    # RAM
 
-# Setup
-for pin in PINS.values():
-    GPIO.setup(pin, GPIO.OUT)
+GPIO.setup(GREEN, GPIO.OUT)
+GPIO.setup(WHITE, GPIO.OUT)
+GPIO.setup(RED, GPIO.OUT)
+GPIO.setup(BLUE, GPIO.OUT)
 
-# PWM init
-pwms = {}
-for key, pin in PINS.items():
-    pwm = GPIO.PWM(pin, 1000)
+# PWM
+pwm_green = GPIO.PWM(GREEN, 1000)
+pwm_white = GPIO.PWM(WHITE, 1000)
+pwm_red = GPIO.PWM(RED, 1000)
+pwm_blue = GPIO.PWM(BLUE, 1000)
+
+for pwm in [pwm_green, pwm_white, pwm_red, pwm_blue]:
     pwm.start(0)
-    pwms[key] = pwm
 
 # -----------------------
-# LED CLASS (CORE ENGINE)
+# 💀 BOOT SEQUENCE
 # -----------------------
-class BreathingLED:
-    def __init__(self, pwm):
-        self.pwm = pwm
-        self.speed = 0.01
-        self.mode = "breathing"  # breathing / solid / off
-        self.value = 0
-        self.direction = 1
+def trail(pwms, delay=0.08):
+    for pwm in pwms:
+        pwm.ChangeDutyCycle(100)
+        time.sleep(delay)
+        pwm.ChangeDutyCycle(0)
 
-    def update(self):
-        if self.mode == "off":
-            self.pwm.ChangeDutyCycle(0)
-            return
+def breathe_once(pwm, speed):
+    for dc in range(0, 101, 5):
+        pwm.ChangeDutyCycle(dc)
+        time.sleep(speed)
+    for dc in range(100, -1, -5):
+        pwm.ChangeDutyCycle(dc)
+        time.sleep(speed)
 
-        if self.mode == "solid":
-            self.pwm.ChangeDutyCycle(100)
-            return
+def boot_sequence():
+    order = [pwm_green, pwm_white, pwm_red, pwm_blue]
 
-        # breathing mode
-        self.value += self.direction * 3
+    # Left → Right trail
+    trail(order)
 
-        if self.value >= 100:
-            self.value = 100
-            self.direction = -1
-        elif self.value <= 0:
-            self.value = 0
-            self.direction = 1
+    # Right → Left trail
+    trail(order[::-1])
 
-        self.pwm.ChangeDutyCycle(self.value)
+    # Left 2 LEDs breathe x2
+    for _ in range(2):
+        breathe_once(pwm_green, 0.01)
+        breathe_once(pwm_white, 0.01)
+
+    # Right 2 LEDs breathe x2
+    for _ in range(2):
+        breathe_once(pwm_red, 0.01)
+        breathe_once(pwm_blue, 0.01)
+
+    # Final 5 flashes
+    for _ in range(5):
+        for pwm in order:
+            pwm.ChangeDutyCycle(100)
+        time.sleep(0.1)
+        for pwm in order:
+            pwm.ChangeDutyCycle(0)
+        time.sleep(0.1)
 
 # -----------------------
-# STATUS FUNCTIONS
+# STATUS CHECKS
 # -----------------------
 def wifi_connected():
     try:
@@ -69,132 +83,124 @@ def wifi_connected():
 
 def wifi_monitor_mode():
     try:
-        return "type monitor" in subprocess.check_output("iw dev", shell=True).decode()
+        mode = subprocess.check_output("iw dev", shell=True).decode()
+        return "type monitor" in mode
     except:
         return False
 
 def ssh_active():
     try:
-        output = subprocess.check_output("ss -tnp | grep sshd", shell=True).decode()
-        return "ESTAB" in output
+        output = subprocess.check_output("who", shell=True).decode()
+        return "pts/" in output
     except:
         return False
 
 def get_temp():
-    t = subprocess.check_output("vcgencmd measure_temp", shell=True).decode()
-    return float(t.replace("temp=", "").replace("'C\n", ""))
+    temp = subprocess.check_output("vcgencmd measure_temp", shell=True).decode()
+    return float(temp.replace("temp=", "").replace("'C\n", ""))
 
 def get_ram():
     return psutil.virtual_memory().percent
 
 # -----------------------
-# BOOT SEQUENCE (NON-BLOCKING STYLE)
+# BREATH FUNCTION
 # -----------------------
-def boot_sequence():
-    order = ["wifi", "ssh", "temp", "ram"]
-
-    # trail →
-    for k in order:
-        pwms[k].ChangeDutyCycle(100)
-        time.sleep(0.08)
-        pwms[k].ChangeDutyCycle(0)
-
-    # trail ←
-    for k in reversed(order):
-        pwms[k].ChangeDutyCycle(100)
-        time.sleep(0.08)
-        pwms[k].ChangeDutyCycle(0)
-
-    # left breathe x2
-    for _ in range(2):
-        for dc in range(0, 101, 5):
-            pwms["wifi"].ChangeDutyCycle(dc)
-            pwms["ssh"].ChangeDutyCycle(dc)
-            time.sleep(0.01)
-        for dc in range(100, -1, -5):
-            pwms["wifi"].ChangeDutyCycle(dc)
-            pwms["ssh"].ChangeDutyCycle(dc)
-            time.sleep(0.01)
-
-    # right breathe x2
-    for _ in range(2):
-        for dc in range(0, 101, 5):
-            pwms["temp"].ChangeDutyCycle(dc)
-            pwms["ram"].ChangeDutyCycle(dc)
-            time.sleep(0.01)
-        for dc in range(100, -1, -5):
-            pwms["temp"].ChangeDutyCycle(dc)
-            pwms["ram"].ChangeDutyCycle(dc)
-            time.sleep(0.01)
-
-    # flash x5
-    for _ in range(5):
-        for pwm in pwms.values():
-            pwm.ChangeDutyCycle(100)
-        time.sleep(0.1)
-        for pwm in pwms.values():
-            pwm.ChangeDutyCycle(0)
-        time.sleep(0.1)
-
-# -----------------------
-# MAIN ENGINE
-# -----------------------
-leds = {k: BreathingLED(pwms[k]) for k in pwms}
-
-def status_updater():
+def breathe_loop(pwm, speed_getter):
     while True:
+        speed = speed_getter()
 
-        # WIFI
+        for dc in range(0, 101, 3):
+            pwm.ChangeDutyCycle(dc)
+            time.sleep(speed)
+        for dc in range(100, -1, -3):
+            pwm.ChangeDutyCycle(dc)
+            time.sleep(speed)
+
+# -----------------------
+# THREADS
+# -----------------------
+
+# 🟢 WiFi
+def wifi_thread():
+    while True:
         if wifi_monitor_mode():
-            leds["wifi"].mode = "solid"
+            pwm_green.ChangeDutyCycle(100)
+            time.sleep(1)
         elif wifi_connected():
-            leds["wifi"].mode = "breathing"
-            leds["wifi"].speed = 0.01
+            speed = 0.01  # medium
         else:
-            leds["wifi"].mode = "breathing"
-            leds["wifi"].speed = 0.003
+            speed = 0.003  # fast
 
-        # SSH
-        if ssh_active():
-            leds["ssh"].mode = "breathing"
-            leds["ssh"].speed = 0.03
-        else:
-            leds["ssh"].mode = "off"
+        if not wifi_monitor_mode():
+            for dc in range(0, 101, 3):
+                pwm_green.ChangeDutyCycle(dc)
+                time.sleep(speed)
+            for dc in range(100, -1, -3):
+                pwm_green.ChangeDutyCycle(dc)
+                time.sleep(speed)
 
-        # RAM
-        ram = get_ram()
-        leds["ram"].mode = "breathing"
-        leds["ram"].speed = 0.01 if ram < 70 else 0.003
-
-        # TEMP
-        temp = get_temp()
-        leds["temp"].mode = "breathing"
-        if temp < 40:
-            leds["temp"].speed = 0.03
-        elif temp <= 60:
-            leds["temp"].speed = 0.01
-        else:
-            leds["temp"].speed = 0.003
-
-        time.sleep(2)
-
-def animation_loop():
+# ⚪ SSH
+def ssh_thread():
     while True:
-        for led in leds.values():
-            led.update()
-        time.sleep(0.01)
+        if ssh_active():
+            speed = 0.03  # very slow
+            for dc in range(0, 101, 2):
+                pwm_white.ChangeDutyCycle(dc)
+                time.sleep(speed)
+            for dc in range(100, -1, -2):
+                pwm_white.ChangeDutyCycle(dc)
+                time.sleep(speed)
+        else:
+            pwm_white.ChangeDutyCycle(0)
+            time.sleep(1)
+
+# 🔵 RAM
+def ram_thread():
+    while True:
+        ram = get_ram()
+        speed = 0.01 if ram < 70 else 0.003
+
+        for dc in range(0, 101, 3):
+            pwm_blue.ChangeDutyCycle(dc)
+            time.sleep(speed)
+        for dc in range(100, -1, -3):
+            pwm_blue.ChangeDutyCycle(dc)
+            time.sleep(speed)
+
+# 🔴 TEMP
+def temp_thread():
+    while True:
+        temp = get_temp()
+
+        if temp < 40:
+            speed = 0.03
+        elif temp <= 60:
+            speed = 0.01
+        else:
+            speed = 0.003
+
+        for dc in range(0, 101, 3):
+            pwm_red.ChangeDutyCycle(dc)
+            time.sleep(speed)
+        for dc in range(100, -1, -3):
+            pwm_red.ChangeDutyCycle(dc)
+            time.sleep(speed)
 
 # -----------------------
-# START
+# MAIN
 # -----------------------
-try:
+def main():
     boot_sequence()
 
-    threading.Thread(target=status_updater, daemon=True).start()
-    threading.Thread(target=animation_loop, daemon=True).start()
+    threading.Thread(target=wifi_thread, daemon=True).start()
+    threading.Thread(target=ssh_thread, daemon=True).start()
+    threading.Thread(target=ram_thread, daemon=True).start()
+    threading.Thread(target=temp_thread, daemon=True).start()
 
     while True:
         time.sleep(1)
 
+try:
+    main()
 except KeyboardInterrupt:
     GPIO.cleanup()
