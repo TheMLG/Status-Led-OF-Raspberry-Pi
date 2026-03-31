@@ -7,7 +7,7 @@ import psutil
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
 
-# 🔌 Pins
+# Pins
 PINS = {
     "wifi": 17,
     "ssh": 27,
@@ -27,7 +27,7 @@ for key, pin in PINS.items():
     pwms[key] = pwm
 
 # -----------------------
-# 🎛 LED CLASS (CORE ENGINE)
+# LED CLASS (CORE ENGINE)
 # -----------------------
 class BreathingLED:
     def __init__(self, pwm):
@@ -59,7 +59,7 @@ class BreathingLED:
         self.pwm.ChangeDutyCycle(self.value)
 
 # -----------------------
-# 🧠 STATUS FUNCTIONS
+# STATUS FUNCTIONS
 # -----------------------
 def wifi_connected():
     try:
@@ -88,7 +88,7 @@ def get_ram():
     return psutil.virtual_memory().percent
 
 # -----------------------
-# 💀 BOOT SEQUENCE (NON-BLOCKING STYLE)
+# BOOT SEQUENCE (NON-BLOCKING STYLE)
 # -----------------------
 def boot_sequence():
     order = ["wifi", "ssh", "temp", "ram"]
@@ -137,14 +137,14 @@ def boot_sequence():
         time.sleep(0.1)
 
 # -----------------------
-# 🚀 MAIN ENGINE
+# MAIN ENGINE
 # -----------------------
 leds = {k: BreathingLED(pwms[k]) for k in pwms}
 
 def status_updater():
     while True:
 
-        # 🟢 WIFI
+        # WIFI
         if wifi_monitor_mode():
             leds["wifi"].mode = "solid"
         elif wifi_connected():
@@ -154,19 +154,19 @@ def status_updater():
             leds["wifi"].mode = "breathing"
             leds["wifi"].speed = 0.003
 
-        # ⚪ SSH
+        # SSH
         if ssh_active():
             leds["ssh"].mode = "breathing"
             leds["ssh"].speed = 0.03
         else:
             leds["ssh"].mode = "off"
 
-        # 🔵 RAM
+        # RAM
         ram = get_ram()
         leds["ram"].mode = "breathing"
         leds["ram"].speed = 0.01 if ram < 70 else 0.003
 
-        # 🔴 TEMP
+        # TEMP
         temp = get_temp()
         leds["temp"].mode = "breathing"
         if temp < 40:
