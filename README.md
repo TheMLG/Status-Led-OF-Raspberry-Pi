@@ -124,7 +124,7 @@ WantedBy=multi-user.target
 sudo systemctl daemon-reload
 
 # Enable services to start on boot
-sudo systemctl enable boot-led.service
+sudo systemctl enable boot-led.Service
 sudo systemctl enable temp-led.service
 sudo systemctl enable wifi-led.service
 sudo systemctl enable ram-led.service
